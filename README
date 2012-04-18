@@ -1,0 +1,175 @@
+This is the dcmpi README file.
+
+dcmpi is an implementation of DataCutter that uses conventional TCP/IP
+sockets for communication, or optionally uses MPI libraries for
+communication.
+
+BUILDING
+--------
+
+1) to build it, you should optionally first install your favorite MPI
+   implementation (some MPI libraries will offer better communication
+   performance than TCP/IP sockets).  One good choice would be mpich,
+   http://www-unix.mcs.anl.gov/mpi/mpich/.  Once that is installed, in
+   your PATH, and you know what the compiler name is for C++ programs
+   (e.g. mpicxx or mpiCC), you can move to the next step.
+
+2) secondly, you must have available the build tool known as scons.
+   under debian, you can simply do 'apt-get install scons'.  for other
+   systems, there may be rpms available, consult your package
+   management tools.  if all else fails, you can build it from source
+   by downloading the source code and running something like 'python
+   setup.py install --prefix=$HOME' (to install under your user
+   account).
+
+3) now, you're ready to build dcmpi.  From the root directory, issue
+
+$ cp config.py.sample config.py
+$ vi config.py # or whatever editor you like
+
+Within this configuration file, there are a number of options.  in
+particular, you may be interested in the following:
+
+mpi_cxx_compiler - the build system has some logic to autodetect
+                   common names for MPI C++ compilers, but to be sure,
+                   you may want to set this to what your MPI
+                   environment actually uses, e.g. 'mpiCC' or
+                   '/opt/mpich/gnu/bin/mpicxx'.  You can also leave
+                   this undefined.  The TCP/IP sockets communication library
+                   will always be built, so you do not need an MPI environment
+		   to use the system.
+
+prefix           - the installation prefix, defaults to /usr/local
+
+use_java         - turn this on if you want to use java filters
+
+use_python       - turn this on if you want to use python filters
+
+extrarpath       - if you're installing dcmpi in a non-standard location (as
+                   in, not /usr), you may want to set this variable to
+                   the 'lib' directory of your installation prefix...otherwise,
+		   you'll have to mess with LD_LIBRARY_PATH or /etc/ld.so.conf
+		   later, in order that the binaries from this package can find
+		   libdcmpi.so when they are executed.
+
+4) to build and install it, you should now type 'scons' from the build
+   directory.  Assuming it successfully builds, you should now type
+   'scons install', assuming you have permission to write to the
+   installation directory (become root if necessary).
+
+5) you should now make sure that the installation directory's 'bin'
+   subdirectory is in your PATH.  To be certain, make sure you can run
+   the program 'dcmpideps' successfully with no arguments.
+
+6) If you're using MPI, you should now configure your user
+   installation by doing the following:
+
+$ dcmpiconfig
+
+You should at least set your dcmpi run command so DataCutter knows how
+to launch your MPI job.  If you do not recognize your MPI installation
+among the choices, you can use the option to write your own run
+command.  'dcmpiconfig' writes to the ~/.dcmpi directory.  You can
+write to this directory yourself if you know what you're doing.
+
+If you are not using MPI, and are therefore using the default TCP/IP
+sockets implementation, you should be aware that the start of command
+to launch DataCutter on remote hosts is by default ssh; therefore, you
+should arrange that you can ssh to remote compute nodes without typing
+in a password; the ssh-keygen and ssh-agent commands are useful here.
+By default, the ssh command is 'ssh -x -o StrictHostKeyChecking=no'.
+If you would like to change it, run the command 'dcmpiconfig'.
+
+7) you're now ready to use dcmpi for the first time.  The 'test'
+   subdirectory contains many sample programs to look at.  You may
+   want to start with 'bwtest.cpp' and 'bwfilters.cpp'.  In order to
+   run this program, you must first set up your filter path, which
+   represents locations where filter libraries (.so, .jar, .py) can be
+   loaded from.  There are two ways of doing this: first, you can set
+   the environment variable DCMPI_FILTER_PATH to a :-separated list of
+   directories; secondly, you can put the directories in the file
+   ~/.dcmpi/dcmpi_filter_path, here is an example of that:
+
+   $ cat ~/.dcmpi/dcmpi_filter_path
+   /home/vskumar/dev/ocvm/ocvm-cvs/src
+   # /home/vskumar/dev/dcmpiapp/dcmpiapp-cvs
+   /home/vskumar/dev/bfs/filters
+
+   Once you've set the filter path to contain the 'test' subdirectory,
+   you should be able to run the program ./bwtest out of the test
+   directory. (you'll need to create a hosts file where you want to
+   run the program on, e.g. if you're on host01, the file 'myhosts'
+   might contain:
+
+   host01
+   host02
+
+   and then you can run the program like './bwtest myhosts 1m 10'
+   to send 10 1 MB packets from host1 to host2.
+
+   If you get any linking errors in this step, and you installed dcmpi
+   in a nonstandard location, perhaps you should modify the variable
+   extrarpath in the config.py (above) and rebuild and reinstall.  Or,
+   you can work around this by adding an entry to LD_LIBRARY_PATH, if
+   you prefer.
+
+8) to develop an application that uses dcmpi, you'll want to know how
+   to build and link against it if you're using C++.  or, if you're
+   using java filters, you'll want to know where the relevant jar
+   files to build against are located.  all these problems can be
+   solved with the executable 'dcmpideps'.  e.g.
+
+   dcmpideps --cflags
+   dcmpideps --libs
+   dcmpideps --classpath
+
+   You can use the output from these commands directly in your build
+   system.
+
+FEATURES
+--------
+
+-if you'd like to visualize your component layouts, make sure you
+ install the graphviz package and run dcmpiconfig to turn on graph
+ generation.
+
+-if you would like to see statistical output from your filters at the
+ end of your execution, you should set the environment variable
+ DCMPI_STATS to 1 before you execute your program.
+
+-if you'd like a debugging window to pop up on demand in the event of
+ the segmentation fault you should set the variable DCMPI_JIT_GDB to
+ 1.  In that case, you should have a valid DISPLAY variable.
+
+-to see lots of debugging information internal to dcmpi, you can set
+ the variable DCMPI_VERBOSE to 1.
+
+-if you are using java filters, and you wish to avoid polluting your
+ global CLASSPATH, any dependencies your filter code has can be
+ reflected in the DCMPI_JAVA_CLASSPATH environment variable, or the
+ ~/.dcmpi/dcmpi_java_classpath configuration file.
+
+-if you're using python filters, and you wish to avoid polluting your
+ global PYTHONPATH, any dependencies your filter code has can be
+ reflected in the DCMPI_PYTHONPATH environment variable, or the
+ ~/.dcmpi/dcmpi_pythonpath configuration file.
+
+-debugging a dcmpi program works nice with the TotalView debugger +
+ MPI.  You'll want to modify your ~/.dcmpi/runcommand file slightly to
+ launch TotalView (consult your local site and MPI system's
+ documentation on the particular command line flags needed). You
+ should get a warning when filter libraries are loaded; at this point,
+ set break points to e.g. yourfilter::process method.
+
+-java remote debugging should work, use something like
+ 'export DCMPI_JAVA_REMOTE_DEBUG_PORT=8124' and then attach your favorite
+ debugger after startup to a given remote host at that hostname:port
+
+-other useful environment variables:
+
+e.g. export DCMPI_JAVA_EXTRA_STARTUP_ARGS="-Xint" # disable JIT
+ 
+BUGS/CONTACT
+------------
+Contact information/bugs/flames:  Vijay S Kumar (vijayskumar@gmail.com)
+Wed Apr 18 16:18:39 PDT 2012
