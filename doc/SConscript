@@ -1,0 +1,6 @@
+import os
+
+Import("env")
+
+os.system('latex manual')
+#env.DVI('manual', 'manual.tex')

@@ -1,0 +1,19 @@
+import os
+# debug             = 1
+# CXX               = 'g++'
+# CXXFLAGS          = ''
+# LINKFLAGS          = ''
+# mpi_cxx_compiler  = 'mpicxx'
+# debug_flags       = '-ggdb3 -Wall'
+# pcre_path         = os.getenv('HOME') + '/.upak/installed/pcre-6.4'
+# use_java          = 1
+# use_python        = 1
+# use_swig          = 1
+# prefix            = '/home/rutt/opt/dcmpi-0.9'
+# extradefines      = 'DCMPI_DEBUG_MPISEND DCMPI_DEBUG_MPIRECV DCMPI_DEBUG_DCBUFFER_MEMORY_MANAGEMENT'
+# extraincludes     = '/home/rutt/include:/home/rutt/local/include'
+# extralibs         = 'hoard jpeg'
+# extralibpath      = '/home/rutt/lib:/opt/some/cool/libdir/lib'
+# extrarpath        = '/usr/local/lib:/opt/foo/lib'
+# build_appconfig   = 1
+# build_testing     = 0

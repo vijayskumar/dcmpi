@@ -1,0 +1,55 @@
+#!/usr/bin/env python
+import os, os.path, sys, re, commands, pickle
+import socket, string, random, threading, time, pwd
+
+def usage():
+    print 'usage:', os.path.basename(sys.argv[0]) + ''
+    sys.exit(1)
+
+class CommandThread(threading.Thread):
+    def __init__(self, cmd):
+        threading.Thread.__init__(self)
+        self.cmd = cmd
+    def run(self):
+        status = os.system(self.cmd)
+        print 'CommandThread: status of %s is %d' % (self.cmd, status)
+
+if ((len(sys.argv)-1) != 0):
+    usage()
+
+dcmpi_home = os.getenv("DCMPI_HOME")
+if dcmpi_home:
+    pass
+elif os.path.exists(os.getenv("HOME")):
+    dcmpi_home = os.getenv("HOME") + '/.dcmpi'
+else:
+    # read the password database
+    username = pwd.getpwuid(os.getuid())[0]
+    dcmpi_home = '/tmp/' + username + '/.dcmpi'
+
+print 'using dcmpi_home of', dcmpi_home
+
+remote_watchdir = dcmpi_home + '/remote_watchdir'
+if not os.path.exists(remote_watchdir):
+    print 'NOTE: creating', remote_watchdir
+    os.makedirs(remote_watchdir)
+
+print 'using remote_watchdir of', remote_watchdir
+
+while 1:
+    try:
+        files = os.listdir(remote_watchdir)
+        if len(files) == 0:
+            time.sleep(1)
+        else:
+            for fnraw in files:
+                fn = remote_watchdir+'/'+fnraw
+                f = open(fn)
+                line = f.readline().strip()
+                f.close()
+                os.remove(fn)
+                print 'dcmpiwatchd: executing', line
+                t = CommandThread(line)
+                t.start()
+    except KeyboardInterrupt:
+        break

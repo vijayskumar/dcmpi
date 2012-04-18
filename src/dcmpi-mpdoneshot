@@ -1,0 +1,100 @@
+#!/usr/bin/env python
+import os, sys, commands, string, tempfile, copy, time
+
+def usage():
+    print 'usage:', os.path.basename(sys.argv[0]) + ' [-v] <hostfile>'
+    sys.exit(1)
+
+verbose = 0
+stime = time.time()
+
+if len(sys.argv)-1 == 2:
+    if sys.argv[1] != "-v":
+        usage()
+    else:
+        verbose = 1
+        sys.argv = sys.argv[:1] + sys.argv[2:]
+
+if ((len(sys.argv)-1) != 1):
+    usage()
+
+lines_in_hostfile = []
+f = open(sys.argv[1],'r')
+while 1:
+    line = f.readline()
+    if not line:
+        break
+    line = string.strip(line)
+    if len(line) > 0:
+        lines_in_hostfile.append(line)
+f.close()
+
+lines_in_hostfile_short = map(lambda x: string.split(x,'.')[0],
+                              lines_in_hostfile)
+# print lines_in_hostfile == lines_in_hostfile_short
+lines_in_hostfile_sorted = copy.deepcopy(lines_in_hostfile)
+lines_in_hostfile_sorted.sort()
+lines_in_hostfile_short_sorted = copy.deepcopy(lines_in_hostfile_short)
+lines_in_hostfile_short_sorted.sort()
+
+# if verbose:
+#     print 'hostfile:', lines_in_hostfile
+
+(status, output) = commands.getstatusoutput("/bin/sh -c 'mpdtrace 2>/dev/null'")
+stop_existing_mpd = 0
+start_new_mpd = 0
+if status != 0:
+    start_new_mpd = 1
+else:
+    output_lines = string.split(output, '\n')
+    output_lines_sorted = copy.deepcopy(output_lines)
+    output_lines_sorted.sort()
+#     if verbose:
+#         print "output_lines are", output_lines
+#         print "output_lines_sorted are", output_lines_sorted
+#         print "lines_in_hostfile_sorted are", lines_in_hostfile_sorted
+#         print "lines_in_hostfile_short_sorted are", lines_in_hostfile_short_sorted
+    if output_lines_sorted == lines_in_hostfile_sorted or \
+       output_lines_sorted == lines_in_hostfile_short_sorted:
+        pass
+    else:
+        (status, output) = commands.getstatusoutput("/bin/sh -c 'mpdtrace -l 2>/dev/null'")
+        output_lines = string.split(output, '\n')
+        output_lines = map(lambda x: string.split(x, '_')[0], output_lines)
+        output_lines_sorted = copy.deepcopy(output_lines)
+        output_lines_sorted.sort()
+#         if verbose:
+#             print "output_lines are", output_lines
+#             print "output_lines_sorted are", output_lines_sorted
+#             print "lines_in_hostfile_sorted are", lines_in_hostfile_sorted
+#             print "lines_in_hostfile_short_sorted are", lines_in_hostfile_short_sorted
+        if output_lines_sorted == lines_in_hostfile_sorted or \
+           output_lines_sorted == lines_in_hostfile_short_sorted:
+            pass
+        else:
+            stop_existing_mpd = 1
+            start_new_mpd = 1
+
+if stop_existing_mpd:
+    cmd = ("/bin/sh -c 'mpdallexit 2>&1'")
+    if verbose:
+        print "stopping existing mpd: ",
+        print "+", cmd
+    (status, output) = commands.getstatusoutput(cmd)
+    if status != 0:
+        sys.stderr.write("ERROR: calling mpdallexit:\n", output)
+        sys.exit(1)
+if start_new_mpd:
+    (tempfd, tempfn) = tempfile.mkstemp(suffix="hostfile")
+    os.write(tempfd, string.join(lines_in_hostfile, '\n'))
+    os.write(tempfd, '\n')
+    os.close(tempfd)
+    cmd = ("mpdboot -n %d -f %s" % (len(lines_in_hostfile), tempfn))
+    if verbose:
+        print "starting new mpd: ",
+        print "+", cmd
+    os.system(cmd)
+    os.remove(tempfn)
+if verbose:
+    etime = time.time()
+    print "elapsed time for mpdonhosts: ", etime - stime

@@ -1,0 +1,28 @@
+#!/bin/sh
+# set -x
+
+if [ $# -lt 3 ]; then
+    echo "usage: `basename $0` <-rsh/-ssh> <NUM> <HF> ..."
+    echo "(for internal use only)"
+    exit 1
+fi
+
+MODE=rsh
+if [ $1 = "-rsh" ]; then
+    MPIEXEC_RSH=rsh
+    export MPIEXEC_RSH
+    shift
+elif [ $1 = "-ssh" ]; then
+    MODE=ssh
+    shift
+else
+    echo "ERROR:  invalid first argument to `basename $0`"
+    exit 1
+fi
+
+EXE="mpiexec -${MODE} -nopm"
+NUMBER=$1
+HF=$2
+shift
+shift
+$EXE -n $NUMBER -machinefile $HF ${1+"$@"}

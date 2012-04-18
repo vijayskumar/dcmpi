@@ -1,0 +1,11 @@
+#!/bin/sh
+if [ $# -eq 0 ]; then
+    echo "usage: `basename $0` <line> ..."
+    exit 1
+fi
+
+F=`mktemp /tmp/dcmpi-mkhostfile.XXXXXX`
+for f in "$@"; do
+    echo $f >> $F
+done
+echo $F

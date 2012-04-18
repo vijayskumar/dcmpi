@@ -1,0 +1,183 @@
+#!/usr/bin/env python
+import os, os.path, sys, re, commands, pickle, time, getopt
+import socket, string, random, threading, Queue, binascii
+
+debug = False
+listen_port = 48802
+listen_socket = None
+cookie_outqueue = {}
+cookie_userofcookiecount = {}
+cookie_mutex = threading.Semaphore()
+memusage = 0
+memusage_mutex = threading.Semaphore()
+memthreshold = (2 ** 20) * 64
+
+def usage():
+    print 'usage:', os.path.basename(sys.argv[0]) + ' [-d] [-p listen_port]'
+    sys.exit(1)
+
+class clienthandler(threading.Thread):
+    def __init__(self, s):
+        threading.Thread.__init__(self)
+        self.s = s
+    def run(self):
+        global memusage
+        global memusage_mutex
+        f = self.s.makefile()
+        auth = f.readline().strip()
+        if auth != "dcmpiwuzzy":
+            sys.stderr.write("ERROR: AUTH Failed, aborting client")
+            f.close()
+            return
+        cookie = f.readline().strip()
+        cluster_rank = int(f.readline().strip())
+        cluster_size = int(f.readline().strip())
+        send_type = f.readline().strip()
+        cookie_mutex.acquire()
+        print 'handling client with cookie', cookie, \
+              ', cluster_rank', cluster_rank, \
+              ', cluster_size', cluster_size, \
+              ', send_type', send_type
+        if not cookie_outqueue.has_key(cookie):
+            cookie_outqueue[cookie] = []
+            for i in range(cluster_size):
+                cookie_outqueue[cookie].append(Queue.Queue())
+            cookie_userofcookiecount[cookie] = cluster_size * 2
+        cookie_mutex.release()
+        if send_type == 'out':
+            byes_received = 0
+            cookie_mutex.acquire()
+            myq = cookie_outqueue[cookie][cluster_rank]
+            cookie_mutex.release()
+            while 1:
+                item = myq.get()
+                if not item:
+                    sys.stderr.write("ERROR: out-thread got None from in-thread\n")
+                    break
+                elif item == 'bye':
+                    byes_received += 1
+                    if byes_received == cluster_size-1:
+                        print 'cluster_rank', cluster_rank, \
+                              'out is saying goodbye'
+                        f.write('bye\n')
+                        f.flush()
+                        break
+                else:
+                    size = len(item)
+                    if debug:
+                        print 'to cluster_rank', cluster_rank, \
+                              'proxy sending packet of size', size
+                    hdr = '%d\n' % (size)
+                    f.write(hdr)
+                    f.write(item)
+                    f.flush()
+                    memusage_mutex.acquire()
+                    memusage -= size
+                    if debug:
+                        print 'memusage decrementing', size, 'now', memusage
+                    assert memusage >= 0
+                    memusage_mutex.release()
+        else: # send_type == 'in'
+            while 1:
+	        line = f.readline().strip()
+                if not line:
+                    sys.stderr.write("ERROR: couldn't read line from cluster_rank %d\n" % (cluster_rank))
+                    # send None to all out threads
+                    cookie_mutex.acquire()
+                    queues = cookie_outqueue[cookie]
+		    cookie_mutex.release()
+                    for i in range(cluster_size):
+                        if i != cluster_rank:
+                            queues[i].put(None)
+                    cookie_mutex.acquire()
+                    break
+		elif line == 'bye':
+                    cookie_mutex.acquire()
+                    queues = cookie_outqueue[cookie]
+		    cookie_mutex.release()
+                    for i in range(cluster_size):
+                        if i != cluster_rank:
+                            queues[i].put('bye')
+                    print 'cluster_rank', cluster_rank, \
+                          'in is saying goodbye'
+                    break
+                else:
+                    (dest, size) = line.split()
+                    dest = int(dest)
+                    size = int(size)
+                    # wait for some stored-here packets to be picked
+                    # up by receivers
+                    while 1:
+                        memusage_mutex.acquire()
+                        usage = memusage
+                        memusage_mutex.release()
+                        if usage + size < memthreshold:
+                            break
+                        if debug:
+                            print 'sleeping b/c exceeding size threshold of', \
+                                  memthreshold
+                        time.sleep(0.5)
+                    if debug:
+                        print 'from cluster_rank', cluster_rank, \
+                              'proxy receiving packet of size', size
+                    cookie_mutex.acquire()
+                    q = cookie_outqueue[cookie][dest]
+                    cookie_mutex.release()
+                    memusage_mutex.acquire()
+                    memusage += size
+                    if debug:
+                        print 'memusage incrementing', size, 'now', memusage
+                    memusage_mutex.release()
+                    input = f.read(size)
+                    if os.getenv('DBG2'):
+                        print 'input from cluster_rank', cluster_rank, 'to', dest, 'is', binascii.b2a_hex(input)
+                    q.put(input)
+	self.s.close()
+        cookie_mutex.acquire()
+        cookie_userofcookiecount[cookie] -= 1
+        if cookie_userofcookiecount[cookie] == 0:
+            del cookie_userofcookiecount[cookie]
+            del cookie_outqueue[cookie]
+            print 'deleted cookie', cookie, ',cookie_outqueue now', cookie_outqueue
+        cookie_mutex.release()
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "hdp:", ["help", None, "port"])
+except getopt.GetoptError:
+    usage()
+for opt, arg in opts:
+    if opt == "-d":
+        debug = True
+    elif opt in ("-h", "--help"):
+        usage()
+    elif opt in ("-p", "--port"):
+        listen_port = int(arg)
+
+if (len(args) > 0):
+    usage()
+
+try:
+    listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listen_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listen_socket.bind(('',listen_port))
+    listen_socket.listen(100)
+    print 'dcmpiproxy: listening on port', listen_port
+except Exception:
+    sys.stderr.write("ERROR: cannot bind to port %s" % (listen_port))
+    sys.exit(1)
+
+all_threads = []
+
+try:
+    while 1:
+        (csock, addr) = listen_socket.accept()
+        print 'dcmpiproxy: accepted from', addr
+        t = clienthandler(csock)
+        t.setDaemon(True)
+        all_threads.append(t)
+        t.start()
+except KeyboardInterrupt:
+    print 'dcmpiproxy: got keyboard interrupt, exiting'
+    sys.exit(1)
+
+

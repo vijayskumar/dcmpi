@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+import os, os.path, sys, re, commands, pickle, tempfile
+import socket, string, random, time
+
+def usage():
+    print 'usage:'
+    print os.path.basename(sys.argv[0]) + ' --cflags'
+    print os.path.basename(sys.argv[0]) + ' --libs'
+    print os.path.basename(sys.argv[0]) + ' --classpath'
+    print os.path.basename(sys.argv[0]) + ' --pythonpath'
+    print os.path.basename(sys.argv[0]) + ' --all'
+    print os.path.basename(sys.argv[0]) + ' --libdirs'
+    print os.path.basename(sys.argv[0]) + ' --jnilinkpath'
+    sys.exit(1)
+
+if ((len(sys.argv)-1) != 1):
+    usage()
+
+install_tree = 0
+real_exe = os.path.realpath(sys.argv[0])
+real_dir = os.path.dirname(real_exe)
+real_dir_basename = os.path.basename(real_dir)
+
+if real_dir_basename == "src":
+    install_tree = 0
+elif real_dir_basename == "bin":
+    install_tree = 1
+else:
+    sys.stderr.write("ERROR: dcmpideps was installed somewhere invalid!")
+    sys.exit(1)
+
+def get_list(f, term):
+    f.seek(0)
+    for line in f.readlines():
+        splits = line.strip().split(' = ')
+        if term==splits[0]:
+            return splits[1].split()
+    return []
+
+db_file = ""
+incdir = ""
+linkdir = ""
+classpath = ""
+jnilinkpath = ""
+if install_tree:
+    db_file = os.path.dirname(real_dir) + '/lib/dcmpideps.txt'
+    incdir = os.path.dirname(real_dir) + '/include'
+    linkdir = os.path.dirname(real_dir) + '/lib'
+    classpath = os.path.dirname(real_dir) + '/lib/dcmpi_java_support.jar:' + \
+        os.path.dirname(real_dir) + '/lib/dcmpilayout.jar'
+    pythonpath = os.path.dirname(real_dir) + '/lib'
+    jnilinkpath = os.path.dirname(real_dir)+'/lib'
+else:
+    db_file = real_dir + '/dcmpideps.txt'
+    incdir = os.path.dirname(real_dir) + '/src'
+    linkdir = os.path.dirname(real_dir) + '/src'
+    classpath = os.path.dirname(real_dir) + '/src/java/dcmpi_java_support.jar:' + \
+        os.path.dirname(real_dir) + '/src/dcmpilayout.jar'
+    pythonpath = os.path.dirname(real_dir) + '/src'
+    jnilinkpath = os.path.dirname(real_dir)+'/src'
+f = open(db_file, "r")
+CPPPATH = [incdir] + get_list(f, 'CPPPATH')
+LIBPATH = [linkdir] + get_list(f, 'LIBPATH')
+LIBS = ['dcmpi'] + get_list(f, 'LIBS')
+RPATH = [linkdir] + get_list(f, 'RPATH')
+CLASSPATH = [classpath]
+PYTHONPATH = [pythonpath]
+java_home = get_list(f, 'java_home')
+java_library_extends = get_list(f, 'java_library_extends')
+java_include_extends = get_list(f, 'java_include_extends')
+f.close()
+
+if java_home:
+    java_home = java_home[0]
+    CPPPATH.extend([os.path.join(java_home, x) for x in java_include_extends])
+    LIBPATH.extend([os.path.join(java_home, x) for x in java_library_extends])
+    RPATH.extend([os.path.join(java_home, x) for x in java_library_extends])
+
+if sys.argv[1] == "--cflags":
+    out = ""
+    for p in CPPPATH:
+        if len(out):
+            out = out + " "
+        out = out + "-I%s" % (p)
+    print out
+elif sys.argv[1] == "--libs":
+    out = ""
+    for p in LIBPATH:
+        if len(out):
+            out = out + " "
+        out = out + "-L%s" % (p)
+    for p in LIBS:
+        if len(out):
+            out = out + " "
+        out = out + "-l%s" % (p)
+    if sys.platform != 'darwin':
+        for p in RPATH:
+            if len(out):
+                out = out + " "
+            out = out + "-Wl,--rpath -Wl," + p
+    print out
+elif sys.argv[1] == "--classpath":
+    out = ""
+    for p in CLASSPATH:
+        if len(out):
+            out = out + ":"
+        out = out + (p)
+    print out
+elif sys.argv[1] == "--pythonpath":
+    out = ""
+    for p in PYTHONPATH:
+        if len(out):
+            out = out + ":"
+        out = out + (p)
+    print out
+elif sys.argv[1] == "--all":
+    print 'CPPPATH', '=', string.join(CPPPATH, ' ')
+    print 'LIBPATH', '=', string.join(LIBPATH, ' ')
+    print 'LIBS', '=', string.join(LIBS, ' ')
+    print 'RPATH', '=', string.join(RPATH, ' ')
+    print 'CLASSPATH', '=', string.join(CLASSPATH, ':')
+    print 'PYTHONPATH', '=', string.join(PYTHONPATH, ':')
+elif sys.argv[1] == "--libdirs":
+    out = ""
+    for p in LIBPATH:
+        if len(out):
+            out = out + " "
+        out = out + "%s" % (p)
+    print out
+elif sys.argv[1]=="--jnilinkpath":
+    print jnilinkpath
+else:
+    sys.stderr.write("ERROR: invalid argument %s\n" % (sys.argv[1]))
+    sys.exit(1)

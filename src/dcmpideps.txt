@@ -1,0 +1,4 @@
+CPPPATH = 
+LIBPATH = 
+LIBS = dl pthread
+RPATH = 

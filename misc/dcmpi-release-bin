@@ -1,0 +1,51 @@
+#!/bin/sh
+
+if [ $# -ne 5 ]; then
+    echo "usage: `basename $0` <version> <output_debug> <output_opt> <output_debug_java> <output_opt_java>"
+    exit 1
+fi
+
+V=$1
+shift
+set -e
+set -x
+T=`mktemp -d /tmp/dcmpi-release-bin.XXXXXX`
+cd $T
+mkdir inst-debug
+mkdir inst-opt
+mkdir inst-debug-java
+mkdir inst-opt-java
+cvs -d :ext:rutt@marion.bmi.ohio-state.edu:/projects/dcmpi/cvs co dcmpi
+cd dcmpi
+scons debug=1 mpi_cxx_compiler=None prefix=`realpath ../inst-debug` install
+scons mpi_cxx_compiler=None prefix=`realpath ../inst-opt` install
+scons use_java=1 debug=1 mpi_cxx_compiler=None prefix=`realpath ../inst-debug-java` install
+scons use_java=1 mpi_cxx_compiler=None prefix=`realpath ../inst-opt-java` install
+cd ..
+
+N=1
+for f in inst-debug inst-opt inst-debug-java inst-opt-java; do
+    cd $f
+    mkdir misc
+    cp ../dcmpi/misc/chrpath misc
+    cp ../dcmpi/misc/dcmpi-binary-installer.sh ./install.sh
+    mkdir etc
+    mkdir etc/dcmpi
+    touch etc/dcmpi/dcmpi_filter_path
+    touch etc/dcmpi/dcmpi_java_classpath
+    cat > etc/dcmpi/runcommand <<EOF
+# for pure sockets (non-MPI) execution
+dcmpirun-socket -hostfile %h -size %n -exe %e
+EOF
+    echo "write_buffer 256m" > etc/dcmpi/memory
+    cd ..
+    cmd='basename $'${N}
+    name=$(eval $cmd | sed 's/.tar.gz$//')
+    mv $f $name
+    cmd='tar czvf $'${N}' $name'
+    eval `echo $cmd`
+    N=`expr $N + 1`
+done
+
+cd /
+rm -fr $T

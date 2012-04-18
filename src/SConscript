@@ -1,0 +1,165 @@
+import os.path, string, re, sys
+
+Import("java_depstate")
+Import("mpi_cxx_compiler")
+Import("srcdir")
+Import("env")
+if mpi_cxx_compiler:
+    Import("mpi_env")
+    mpi_env.Append(LIBS=['dcmpi'])
+
+prefix = env['install_prefix']
+installed_libdir = os.path.join(prefix, "lib")
+installed_bindir = os.path.join(prefix, "bin")
+
+files = Split("""
+dcmpi.cpp DCMPIPacket.cpp DCBuffer.cpp DCFilter.cpp DCFilterExecutor.cpp
+DCFilterInstance.cpp DCLayout.cpp DCThread.cpp Instance_Port.cpp dcmpi_util.cpp
+dcmpi_dll.cpp dcmpi_home.cpp dcmpi_socket.cpp ResolvedMultiPort.cpp
+Gftid_Port.cpp MemUsage.cpp dcmpi_globals.cpp dcmpi_sha1.cpp
+MultiOutportManager.cpp QueueWriter.cpp
+""")
+
+if env['build_appconfig']:
+    files.extend([os.path.join(env['sqlite_dir'], x) for x in open(os.path.join(env['sqlite_dir'], 'srcfiles.txt')).read().split()])
+    files.append(Split("""dcmpi-configdb.cpp"""))
+
+# shared library is required, because of globals
+dcmpi_lib = env.SharedLibrary('dcmpi', files)
+
+runtime_env = env.Copy()
+runtime_env.Append(LIBS=['dcmpi'])
+dcmpiruntime_util = runtime_env.Object('dcmpiruntime-util.cpp')
+if mpi_cxx_compiler:
+    dcmpiruntime = mpi_env.Program('dcmpiruntime',['dcmpiruntime.cpp',
+                                                   dcmpiruntime_util])
+dcmpiruntime_socket = runtime_env.Program('dcmpiruntime-socket',
+                                          ['dcmpiruntime-socket.cpp',
+                                           dcmpiruntime_util])
+
+dcmpiconfig = runtime_env.Program('dcmpiconfig.cpp')
+dcmpiremotestartup = runtime_env.Program('dcmpiremotestartup.cpp')
+
+if env['build_appconfig']:
+    appcfg = runtime_env.Program('dcmpi-app-config.cpp')
+    apprun = runtime_env.Program('dcmpi-app-run.cpp')
+    env.Alias("install", env.Install(installed_bindir, [appcfg,apprun]))
+
+Export("env")
+
+if env['use_java']:
+    SConscript('java/SConscript')
+
+    if env['use_swig']:
+        def swigjava(target, source, env):
+            cmd = 'cd src; test -d dcmpilayout || mkdir dcmpilayout; swig -o dcmpilayout-java.cpp -package dcmpilayout -outdir dcmpilayout -c++ -java dcmpilayout.i'
+            rc = os.system(cmd)
+            if rc:
+                sys.stderr.write("ERROR: running command %s" % (cmd))
+                sys.exit(1)
+        env.Command(target='dcmpilayout-java.cpp',source='dcmpilayout.i', action=Action(swigjava))
+        wrapped_env = env.Copy()
+        wrapped_env.Append(LIBS=['dcmpi'])
+        wrapped_env.SharedLibrary(target="lib_dcmpilayout_tmpj.so", source='dcmpilayout-java.cpp')
+        env.Command('libdcmpilayout-java.so', 'lib_dcmpilayout_tmpj.so',
+                    Move('$TARGET','$SOURCE'))
+        java_env = env.Copy()
+        java_env.Java(target=".", source="dcmpilayout")
+        java_env['JARCHDIR'] = "src"
+        java_env.Jar(target="dcmpilayout.jar",source="dcmpilayout")
+        env.Alias("install",
+                  env.Install(installed_libdir,
+                              ['dcmpilayout.jar','libdcmpilayout-java.so']))
+
+if env['use_python']:
+    plugin_env = env.Copy()
+    plugin_env.Append(LIBS=['dcmpi'])
+    if sys.platform == 'darwin':
+        plugin_env['SHLINKFLAGS'] = '$LINKFLAGS -bundle -flat_namespace -undefined suppress'
+        plugin_env['SHLIBSUFFIX'] = '.so'
+    extlib = plugin_env.SharedLibrary(target='lib_dcmpi_pynativedefs.so',source='dcmpi_pynativedefs.cpp')
+    env.Command('dcmpi_pynativedefs.so', 'lib_dcmpi_pynativedefs.so',
+                Move('$TARGET','$SOURCE'))
+
+    if env['use_swig']:
+        def swigpython(target, source, env):
+            cmd = 'cd src; swig -o dcmpilayout-py.cpp -c++ -python dcmpilayout.i'
+            rc = os.system(cmd)
+            if rc:
+                sys.stderr.write("ERROR: running command %s" % (cmd))
+                sys.exit(1)
+        env.Command(target=['dcmpilayout-py.cpp','dcmpilayout.py'],source='dcmpilayout.i', action=Action(swigpython))
+
+        wrapped_env = env.Copy()
+        wrapped_env.Append(LIBS=['dcmpi'])
+        wrapped_env.SharedLibrary(target="lib_dcmpilayout_tmpp.so", source='dcmpilayout-py.cpp')
+        env.Command('_dcmpilayout.so', 'lib_dcmpilayout_tmpp.so',
+                    Move('$TARGET','$SOURCE'))
+
+# install libraries
+env.Alias("install", env.Install(installed_libdir, dcmpi_lib))
+
+# install binaries
+if mpi_cxx_compiler:
+    env.Alias("install", env.Install(installed_bindir, dcmpiruntime))
+env.Alias("install", env.Install(installed_bindir, dcmpiruntime_socket))
+env.Alias("install", env.Install(installed_bindir, dcmpiconfig))
+env.Alias("install", env.Install(installed_bindir, dcmpiremotestartup))
+env.Alias("install", env.Install(installed_bindir,
+                                         ['dcmpiproxy',
+                                          'dcmpiwatchd',
+                                          'dcmpideps',
+                                          'dcmpi-mpich2-smpd-launcher',
+                                          'dcmpimkhostfile',
+                                          'dcmpirun-socket',
+                                          'dcmpi-user-env']))
+if env['use_python']:
+    stuff = ['dcmpi.py','dcmpi_pyhelpers.py',
+             'dcmpi_pynativedefs.so']
+    if env['use_swig']:
+        stuff.extend(['dcmpilayout.py','_dcmpilayout.so'])
+    env.Alias("install", env.Install(installed_libdir, stuff))
+
+# install headers
+env.Alias("install",
+                  env.Install(os.path.join(prefix, "include"),
+                                      ['dcmpi.h',
+                                       'dcmpi_typedefs.h',
+                                       'dcmpi_provide_defs.h']))
+
+dependent_includes = ' '.join(filter(lambda x: x != srcdir, env['CPPPATH']))
+dependent_libpaths = ' '.join(filter(lambda x: x != srcdir, env['LIBPATH']))
+dependent_libs     = ' '.join(filter(lambda x: x != "dcmpi", env['LIBS']))
+
+if java_depstate.has_key('include_extends'):
+    extended_full = [os.path.join(java_depstate['home'],x)
+                     for x in java_depstate['include_extends']]
+    l = []
+    for f in dependent_includes.split():
+        if f not in extended_full:
+            l.append(f)
+    dependent_includes = ' '.join(l)
+
+if java_depstate.has_key('library_extends'):
+    extended_full = [os.path.join(java_depstate['home'],x)
+                     for x in java_depstate['library_extends']]
+    l = []
+    for f in dependent_libpaths.split():
+        if f not in extended_full:
+            l.append(f)
+    dependent_libpaths = ' '.join(l)
+
+f = open("dcmpideps.txt", "w")
+if java_depstate:
+    f.write('java_home = %s\n' % (java_depstate['home']))
+    del java_depstate['home']
+    for k in java_depstate:
+        f.write('java_%s = %s\n' % (k, ' '.join(java_depstate[k])))
+f.write('CPPPATH = %s\n' % dependent_includes)
+f.write('LIBPATH = %s\n' % dependent_libpaths)
+f.write('LIBS = %s\n' % dependent_libs)
+f.write('RPATH = %s\n' % dependent_libpaths)
+f.close()
+
+env.Alias("install", env.Install(os.path.join(prefix, "lib"),
+                                 ['dcmpideps.txt']))

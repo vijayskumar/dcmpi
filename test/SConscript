@@ -1,0 +1,89 @@
+import os.path, string, re, sys
+
+Import("mpi_cxx_compiler")
+Import("env")
+if mpi_cxx_compiler:
+    Import("mpi_env")
+
+plugin_env = env.Copy()
+plugin_env.Append(LIBS=['dcmpi'])
+if sys.platform == 'darwin':
+    plugin_env['SHLINKFLAGS'] = '$LINKFLAGS -bundle -flat_namespace -undefined suppress'
+    plugin_env['SHLIBSUFFIX'] = '.so'
+
+# filter libraries
+plugin_env.SharedLibrary('abfilters.cpp')
+plugin_env.SharedLibrary('all2allfilters.cpp')
+plugin_env.SharedLibrary('bidibwfilters.cpp')
+plugin_env.SharedLibrary('bwfilters.cpp')
+plugin_env.SharedLibrary('compfilters.cpp')
+plugin_env.SharedLibrary('consolefilters.cpp')
+plugin_env.SharedLibrary('overwritefilters.cpp')
+plugin_env.SharedLibrary('ringfilters.cpp')
+plugin_env.SharedLibrary('memfilters.cpp')
+# plugin_env.SharedLibrary('portpolicyfilters.cpp')
+plugin_env.SharedLibrary('ticketfilters.cpp')
+plugin_env.SharedLibrary('labelfilters.cpp')
+plugin_env.SharedLibrary('rcmdfilters.cpp')
+plugin_env.SharedLibrary('selfwritefilters.cpp')
+plugin_env.SharedLibrary('ddfilters.cpp')
+plugin_env.SharedLibrary('comprfilters.cpp')
+
+apps_env = env.Copy()
+apps_env.Append(LIBS=['dcmpi'])
+apps_env.Program('abtest.cpp')
+apps_env.Program('all2alltest.cpp')
+apps_env.Program('bidibwtest.cpp')
+apps_env.Program('bwtest.cpp')
+apps_env.Program('comptest.cpp')
+apps_env.Program('consolebcast.cpp')
+apps_env.Program('consoletest.cpp')
+apps_env.Program('overwritetest.cpp')
+apps_env.Program('ringtest.cpp')
+apps_env.Program('memtest.cpp')
+apps_env.Program('multilayouttest.cpp')
+apps_env.Program('emptybuffertest.cpp')
+# apps_env.Program('portpolicytest.cpp')
+apps_env.Program('tickettest.cpp')
+apps_env.Program('labeltest.cpp')
+apps_env.Program('rcmd.cpp')
+apps_env.Program('selfwritetest.cpp')
+apps_env.Program('ddtest.cpp')
+apps_env.Program('comprtest.cpp')
+
+# other tests
+apps_env.Program('commandThread.cpp')
+apps_env.Program('backtrace.cpp')
+
+if mpi_cxx_compiler:
+    # mpi_env.Program('mpi_emulator.cpp')
+    mpi_env.Program('mpisend.cpp')
+    mpi_env.Program('mpi-hello-world.cpp')
+
+if env['use_java']:
+    java_test_env = env.Copy()
+    java_test_env['JAVACFLAGS'] = "-classpath src/java/dcmpi_java_support.jar"
+
+    java_classes = java_test_env.Java(target='classes', source='.')
+
+    def makejar_test(target, source, env):
+        cmd = 'cd test; jar cf java_test_filters.jar -C classes .'
+        rc = os.system(cmd)
+        if rc:
+            sys.stderr.write("ERROR: running command %s" % (cmd))
+            sys.exit(1)
+
+    jar_test = java_test_env.Command(target='java_test_filters.jar',
+                                     source='classes',
+                                     action=Action(makejar_test))
+
+    apps_env.Program('java_test1.cpp')
+    apps_env.Program('java_test2.cpp')
+    plugin_env.SharedLibrary('java_test3_receiver.cpp')
+    apps_env.Program('java_test3.cpp')
+    apps_env.Program('java_test4.cpp')
+    plugin_env.SharedLibrary('java_test4_filter_cxx.cpp')
+    apps_env.Program('jni_init.cpp')
+
+if env['use_python']:
+    apps_env.Program('pytest1.cpp')

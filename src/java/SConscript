@@ -1,0 +1,16 @@
+import os.path
+
+Import("env")
+
+classes = env.Java(target = 'classes', source = 'dcmpi')
+env.JavaH(target = File('native.h'), source = classes)
+env.Append(LIBS=['dcmpi'])
+nativelib = env.SharedLibrary('dcmpijni', 'jninativedefs.cpp')
+jarenv = env.Copy()
+jarenv['JARCHDIR'] = "src/java/classes"
+java_support = jarenv.Jar(target="dcmpi_java_support.jar",source="classes")
+
+prefix = env['install_prefix']
+installed_libdir = os.path.join(prefix, "lib")
+env.Alias("install", env.Install(installed_libdir, nativelib))
+env.Alias("install", env.Install(installed_libdir, java_support))

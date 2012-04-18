@@ -1,0 +1,19 @@
+import os.path, re
+
+clean_env = Environment(ENV = os.environ)
+clean_env['CCFLAGS'] = clean_env['CCFLAGS'] + ' -g'
+srcfiles = filter(lambda x: re.search("\\.c$", x) and x not in ['tclsqlite.c','shell.c'], os.listdir('.'))
+files = []
+for f in srcfiles:
+    obj = clean_env.SharedObject(f)
+    files.append(obj[0].name)
+    # files.append(f)
+
+f = open('srcfiles.txt', "w")
+f.write(' '.join(files))
+f.close()
+
+# clean_env.Command('../../src/dcmpisqlite3.h', 'dcmpisqlite3.h',
+#                  Copy('$TARGET','$SOURCE'))
+
+shell = clean_env.Program('sqlite3', [clean_env.SharedObject(x) for x in srcfiles + ['shell.c']])
